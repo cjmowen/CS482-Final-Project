@@ -14,12 +14,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import os
+import json
+import time
 import webapp2
+import jinja2
+import utils
+
+
+jinjaEnv = jinja2.Environment(autoescape=True,
+    loader=jinja2.FileSystemLoader(os.path.join(os.path.dirname(__file__),
+        "templates")))
+
+defaultWidth = 1000;
+defaultHeight = 600;
+defaultDist = 100;
 
 class MainHandler(webapp2.RequestHandler):
     def get(self):
-        self.response.write('Hello world!')
+        template = jinjaEnv.get_template("game.html")
+        self.response.write(template.render({"width": defaultWidth, "height": defaultHeight}))
+
+class JoinHandler(webapp2.RequestHandler):
+    def get(self):
+        grid = utils.getMap(defaultWidth, defaultHeight, defaultDist)
+        data = {"dist": defaultDist, "grid": grid}
+        self.response.write(json.dumps(data))
+
 
 app = webapp2.WSGIApplication([
-    ('/', MainHandler)
+    ("/", MainHandler),
+    ("/join", JoinHandler)
 ], debug=True)

@@ -1,0 +1,11 @@
+body {
+    font-family: 'Merriweather Sans', sans-serif;
+}
+
+h1 {
+    font-size: 20px;
+}
+
+canvas {
+    border: solid 2px black;
+}
