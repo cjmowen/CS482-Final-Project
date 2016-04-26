@@ -23,7 +23,7 @@ def getMap(width, height, dist):
         for b in coords:
             if a["x"] == b["x"] and (abs(a["y"] - b["y"]) == dist):
                 a["adj"].append(b["name"])
-            elif a["y"] == b["y"] and (abs(a["y"] - b["y"]) == dist):
+            elif a["y"] == b["y"] and (abs(a["x"] - b["x"]) == dist):
                 a["adj"].append(b["name"])
 
     return coords
