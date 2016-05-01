@@ -32,17 +32,12 @@ defaultDist = 100;
 
 class MainHandler(webapp2.RequestHandler):
     def get(self):
-        template = jinjaEnv.get_template("game.html")
-        self.response.write(template.render({"width": defaultWidth, "height": defaultHeight}))
-
-class JoinHandler(webapp2.RequestHandler):
-    def get(self):
-        grid = utils.getMap(defaultWidth, defaultHeight, defaultDist)
-        data = {"dist": defaultDist, "grid": grid}
-        self.response.write(json.dumps(data))
+        # TODO: Send a start page where the player can press a button to
+        # start the game. Optionally, the player may be able to set certain
+        # options for the game (map size, game type, difficulty, etc.).
 
 
 app = webapp2.WSGIApplication([
     ("/", MainHandler),
-    ("/join", JoinHandler)
+    ("/game", GameHandler)
 ], debug=True)
