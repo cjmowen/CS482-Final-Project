@@ -104,6 +104,18 @@ function collides(obj1, obj2) {
 }
 
 
+function containsCreature(tile, creature) {
+    var bounds = {
+        left: tile.x - TILE_WIDTH/2,
+        top: tile.y - TILE_WIDTH/2,
+        right: tile.x + TILE_WIDTH/2,
+        bottom: tile.y + TILE_WIDTH/2
+    };
+
+    return creature.x > bounds.left && creature.x < bounds.right && creature.y > bounds.top && creature.y < bounds.bottom;
+}
+
+
 /*******************************************************************************
 INTIALIZATION FUNCTIONS
 *******************************************************************************/
@@ -139,22 +151,25 @@ function initMap(mapData) {
     for (var x = 0; x < mapData.length; ++x) {
         game.dungeon[x] = [];
         for (var y = 0; y < mapData[0].length; ++y) {
+            var tile;
             switch (mapData[x][y]) {
                 case 0:
-                    game.dungeon[x][y] = new Floor(x*TILE_WIDTH, y*TILE_WIDTH));
+                    tile = new Floor(x*TILE_WIDTH, y*TILE_WIDTH);
                     break;
                 case 1:
-                    var wall = new Wall(x*TILE_WIDTH, y*TILE_WIDTH);
-                    game.walls.push(wall);
-                    game.dungeon[x][y] = wall;
+                    tile = new Wall(x*TILE_WIDTH, y*TILE_WIDTH);
+                    game.walls.push(tile);
                     break;
                 case 2:
+                    tile = new Floor(x*TILE_WIDTH, y*TILE_WIDTH);
                     game.player = new Player(x*TILE_WIDTH, y*TILE_WIDTH);
                     break;
                 case 3:
+                    tile = new Floor(x*TILE_WIDTH, y*TILE_WIDTH);
                     game.monsters.push(new Monster(x*TILE_WIDTH, y*TILE_WIDTH));
                     break;
             }
+            game.dungeon[x][y] = tile;
         }
     }
 }
@@ -189,8 +204,8 @@ function gameLoop() {
 
 
 function draw() {
-    var x = game.player.getX() - canvas.width/2,
-        y = game.player.getY() - canvas.height/2;
+    var x = game.player.x - canvas.width/2,
+        y = game.player.y - canvas.height/2;
 
     canvas.absolutePan(new fabric.Point(x, y));
     canvas.renderAll()
@@ -207,6 +222,10 @@ function update() {
     if (dKey) ++xDir;
 
     game.player.move(xDir, yDir);
+
+    game.monsters.forEach(function(monster, i) {
+        monster.doMove();
+    });
 }
 
 
@@ -243,6 +262,12 @@ function Floor(x, y) {
 function Tile(x, y) {
     this.x = x;
     this.y = y;
+    this.getIndices = function() {
+        return {
+            "x": Math.round(this.x / TILE_WIDTH),
+            "y": Math.round(this.y / TILE_WIDTH)
+        };
+    };
 }
 
 function Player(xCoord, yCoord) {
@@ -254,28 +279,104 @@ function Monster(xCoord, yCoord) {
     this.prototype = Creature;
     this.prototype(xCoord, yCoord, 60, "green", 7);
 
-    this.setTarget = function() {
-        // First, check if the player is within line of sight in any of the
-        // cardinal directions (there shouldn't be a need to look diagonally).
-        for (var dir = 0, coord; dir <= 3; ++dir) {
-            var x = this.x;
-            var y = this.y;
+    this.target = null;
+    this.pursuingPlayer = false;
+    this.maxPursuitRange = 5;
+
+    // Pick a random starting direction.
+    this.currentDirection = Math.floor(Math.random() * 4);
+
+    this.playerInSight = function() {
+        // Check if the player is within line of sight in any of the cardinal
+        // directions (there shouldn't be a need to look diagonally).
+        for (var dir = 0; dir <= 3; ++dir) {
+            var coord = this.getTileIndices();
             var tile;
 
             do {
-                coord = Direction.getAdjacentCoords(x, y, dir);
-                x = coord.x;
-                y = coord.y;
+                coord = Direction.getAdjacentCoords(coord.x, coord.y, dir);
+                // Don't bother looking outside the bounds of the map.
+                if (coord.x < 0 || coord.x >= game.dungeon.length) break;
+                if (coord.y < 0 || coord.y >= game.dungeon[0].length) break;
 
-                tile = game.dungeon[x][y];
-                
-            } while ();
+                tile = game.dungeon[coord.x][coord.y];
+                if (tile instanceof Floor) {
+                    if (containsCreature(tile, game.player)) {
+                        console.log("FOUND PLAYER");
+                        return true;
+                    }
+                }
+            } while (tile && tile instanceof Floor);
+        }
+        return false;
+    }
+
+    this.searchForPlayer = function() {
+        // Look for the player up to <maxPursuitRange> tiles away.
+
+    }
+
+    this.getNextTile = function() {
+        // Pick a tile to move to.
+        var tile, dir, coord;
+        var directions = [
+            Direction.NORTH,
+            Direction.EAST,
+            Direction.SOUTH,
+            Direction.WEST
+        ];
+
+        do {
+            dir = Math.floor(Math.random() * directions.length);
+            if (dir == this.currentDirection && directions.length > 1) {
+                // Going backwards is the last resort.
+                continue;
+            }
+            coord = this.getTileIndices();
+            coord = Direction.getAdjacentCoords(coord.x, coord.y, dir);
+            directions.splice(dir, 1);
+
+            if (coord.x < 0 || coord.x > game.dungeon.length) continue;
+            if (coord.y < 0 || coord.y > game.dungeon[0].length) continue;
+
+            tile = game.dungeon[coord.x][coord.y];
+            if (tile instanceof Floor) {
+                this.currentDirection = dir;
+                break;
+            }
+
+            tile = null;
+        } while (directions.length > 0);
+
+        if (tile) {
+            return tile;
         }
     }
 
-    this.move = function() {
+    this.doMove = function() {
         // TODO: Monster.move
+        if (this.playerInSight()) {
+            // If it can see the player, it targets the player.
+            console.log("Player in sight.");
+            this.target = game.player;
+        }
+        else if (this.searchForPlayer()) {
 
+        }
+        else if ((this.target instanceof Floor) === false || containsCreature(this.target, this)) {
+            // If it has arrived at the destination, find a new destination.
+            console.log("Finding new target.");
+            this.target = this.getNextTile();
+        }
+
+        if (this.target) {
+            var dx = this.target.x - this.x,
+                dy = this.target.y - this.y;
+            this.move(dx, dy);
+        }
+        else {
+            console.log("NO TARGET!!!");
+        }
     };
 }
 
@@ -346,5 +447,12 @@ function Creature(xCoord, yCoord, size, color, speed) {
 
         this.x = this.g.left;
         this.y = this.g.top;
+    };
+
+    this.getTileIndices = function() {
+        var x = Math.round(this.x / TILE_WIDTH);
+        var y = Math.round(this.y / TILE_WIDTH);
+
+        return {"x": x, "y": y};
     };
 }
