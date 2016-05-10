@@ -9,3 +9,8 @@ h1 {
 canvas {
     border: solid 2px black;
 }
+
+#content {
+    padding-left: 50px;
+    padding-top: 20px;
+}
