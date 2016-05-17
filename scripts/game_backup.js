@@ -33,31 +33,6 @@ var Direction = {
         }
 
         return {"x": adjX, "y": adjY};
-    },
-    getLeft: function(direction) {
-        --direction;
-        if (direction < 0) {
-            direction = 3;
-        }
-
-        return direction;
-    },
-    getRight: function(direction) {
-        ++direction;
-        if (direction > 3) {
-            direction = 0;
-        }
-
-        return direction;
-    },
-    getBack: function(direction) {
-        direction -= 2;
-
-        if (direction < 0) {
-            direction += 4;
-        }
-
-        return direction;
     }
 };
 
@@ -302,134 +277,161 @@ function Player(xCoord, yCoord) {
 
 function Monster(xCoord, yCoord) {
     this.prototype = Creature;
-    this.prototype(xCoord, yCoord, 60, "green", 5);
+    this.prototype(xCoord, yCoord, 60, "green", 7);
+
+    // The target may be a floor tile or the player. pathToTarget is used when
+    // the Monster is pursuing the Player, but it is not within line of sight.
+    // We search for the player within the maxPursuitRange, and, if we find
+    // them, we put the path to the player in pathToTarget.
+    this.target = null;
+    this.pathToTarget = [];
+    this.pursuingPlayer = false;
+    this.maxPursuitRange = 5;
 
     // Pick a random starting direction.
-    this.facing = Math.floor(Math.random() * 4);
-    this.chasingPlayer = false;
-    this.path = [];
-    this.maxChaseDistance = 5;
+    this.currentDirection = Math.floor(Math.random() * 4);
 
-    this.seesPlayer = function() {
+    this.playerInSight = function() {
         // Check if the player is within line of sight in any of the cardinal
         // directions (there shouldn't be a need to look diagonally).
-        var coord = this.getTileIndices();
-        var tile = game.dungeon[coord.x][coord.y];
+        for (var dir = 0; dir <= 3; ++dir) {
+            var coord = this.getTileIndices();
+            var tile;
 
-        if (containsCreature(tile, game.player)) {
-            // The player is in the current tile.
-            console.log("FOUND PLAYER");
-            return true;
-        }
-        else {
-            for (var dir = 0; dir <= 3; ++dir) {
-                var coord = this.getTileIndices();
-                tile = null;
-                do {
-                    coord = Direction.getAdjacentCoords(coord.x, coord.y, dir);
-                    // Don't bother looking outside the bounds of the map.
-                    if (coord.x < 0 || coord.x >= game.dungeon.length) break;
-                    if (coord.y < 0 || coord.y >= game.dungeon[0].length) break;
+            do {
+                coord = Direction.getAdjacentCoords(coord.x, coord.y, dir);
+                // Don't bother looking outside the bounds of the map.
+                if (coord.x < 0 || coord.x >= game.dungeon.length) break;
+                if (coord.y < 0 || coord.y >= game.dungeon[0].length) break;
 
-                    tile = game.dungeon[coord.x][coord.y];
-                    if (tile instanceof Floor) {
-                        if (containsCreature(tile, game.player)) {
-                            console.log("FOUND PLAYER");
-                            return true;
-                        }
+                tile = game.dungeon[coord.x][coord.y];
+                if (tile instanceof Floor) {
+                    if (containsCreature(tile, game.player)) {
+                        console.log("FOUND PLAYER");
+                        return true;
                     }
-                } while (tile && tile instanceof Floor);
-            }
+                }
+            } while (tile && tile instanceof Floor);
         }
-
         return false;
     }
 
-    this.findPlayer = function() {
-        // TODO: Find player.
-        // Return a path to the player, or an empty path if none can be found.
-        // The path should be no longer than maxChaseDistance.
+    this.getPathToPlayer = function() {
+        // Look for the player up to <maxPursuitRange> tiles away.
+        var queue = [],
+            visited = [],
+            success = false,
+            node = {
+                tile: this.getTileIndices(),
+                parent: null,
+                distance: 0
+            };
 
+        queue.push(node);
+        visited.push(node)
+        do {
+            node = queue.shift();
+            if (node.distance < this.maxPursuitRange) {
+                for (var dir = 0; dir <= 3; ++dir) {
+                    var adjCoord = Direction.getAdjacentCoords(node.tile.x, node.tile.y, dir);
+                    if (game.dungeon[adjCoord.x] === undefined || game.dungeon[adjCoord.x][adjCoord.y] === undefined) {
+                        continue;
+                    }
+                    var adjTile = game.dungeon[adjCoord.x][adjCoord.y];
+
+                    if (adjTile instanceof Floor) {
+                        var newNode = {
+                            tile: adjTile,
+                            parent: node,
+                            distance: node.distance + 1
+                        };
+
+                        if (containsCreature(adjTile, game.player)) {
+                            var path = [];
+
+                            do {
+                                path.push(newNode.tile);
+                                newNode = newNode.parent;
+                            } while (newNode);
+
+                            return path;
+                        }
+                        else if (visited.indexOf(adjTile) < 0) {
+                            queue.push(newNode);
+                            visited.push(newNode);
+                        }
+                    }
+                }
+            }
+
+        } while (queue.length > 0);
+    }
+
+    this.getNextTile = function() {
+        if (this.pathToTarget.length > 0) {
+            // If there are any tiles left in pathToTarget, continue following
+            // the path.
+            return this.pathToTarget.shift();
+        }
+
+        // Pick a tile to move to.
+        var tile, dir, coord;
+        var directions = [
+            Direction.NORTH,
+            Direction.EAST,
+            Direction.SOUTH,
+            Direction.WEST
+        ];
+
+        do {
+            dir = Math.floor(Math.random() * directions.length);
+            if (dir == ((this.currentDirection + 2) % 4) && directions.length > 1) {
+                // Going backwards is the last resort.
+                continue;
+            }
+            coord = this.getTileIndices();
+            coord = Direction.getAdjacentCoords(coord.x, coord.y, dir);
+            directions.splice(dir, 1);
+
+            if (coord.x < 0 || coord.x > game.dungeon.length) continue;
+            if (coord.y < 0 || coord.y > game.dungeon[0].length) continue;
+
+            tile = game.dungeon[coord.x][coord.y];
+            if (tile instanceof Floor) {
+                this.currentDirection = dir;
+                return tile;
+            }
+        } while (directions.length > 0);
     }
 
     this.doMove = function() {
-        if (/*this.seesPlayer()*/ false) {
-            // Move directly towards the player.
-            console.log("CHASING PLAYER");
-            this.chasingPlayer = true;
-            this.path = [];
-            this.move(game.player.x - this.x, game.player.y - this.y);
+        // TODO: Monster.move
+        var playerSighted = this.playerInSight();
+        var destination;
+
+        if (playerSighted) {
+            console.log("See player");
+            this.target = game.player;
+            destination = game.player;
         }
         else {
-            if (this.chasingPlayer) {
-                console.log("FINDING PLAYER");
-                // TODO: Find path to player.
-                // If a path can't be found, set chasingPlayer to false, but leave
-                // the current path in case the player is found along it.
-                this.chasingPlayer = false; // TESTING
-            }
-            else if (this.path.length > 0 && containsCreature(this.path[0], this)) {
-                this.path.shift();
-            }
-
-            if (this.path.length === 0) {
-                console.log("FINDING NEXT TILE");
-                // TODO: Select a new tile to move to, and add it to the path.
-                // If there is no path to follow, find a tile to go to.
-                // First look at tiles forward, left, and right. Only if all of
-                // them are walls do we go backwards.
-                var coord = this.getTileIndices();
-                var coords = [
-                    Direction.getAdjacentCoords(coord.x, coord.y, Direction.getLeft(this.facing)),
-                    Direction.getAdjacentCoords(coord.x, coord.y, this.facing),
-                    Direction.getAdjacentCoords(coord.x, coord.y, Direction.getRight(this.facing))
-                ];
-
-                var tile = null;
-                do {
-                    // Look forward, left, and right.
-                    var i = Math.floor(Math.random() * coords.length);
-                    coord = coords[i];
-
-                    if (game.dungeon[coord.x] && game.dungeon[coord.x][coord.y]) {
-                        tile = game.dungeon[coord.x][coord.y];
-                    }
-
-                    if (tile instanceof Floor) {
-                        console.log("Choosing direction " + i);
-                        this.facing = i;
-                        break;
-                    }
-                    else {
-                        tile = null;
-                        coords.splice(i, 1);
-                    }
-                } while (coords.length > 0);
-
-                if (tile === null) {
-                    // Go backwards.
-                    console.log("Going backwards");
-                    coord = this.getTileIndices();
-                    this.facing = Direction.getBack(this.facing);
-                    coord = Direction.getAdjacentCoords(coord.x, coord.y, this.facing);
-                    if (game.dungeon[coord.x] && game.dungeon[coord.x][coord.y]) {
-                        tile = game.dungeon[coord.x][coord.y];
-                    }
+            if (this.target instanceof Player) {
+                var path = this.getPathToPlayer();
+                if (path) {
+                    this.pathToTarget = path;
                 }
+            }
+            destination = this.getNextTile();
+            console.log("DEST: " + destination);
+        }
 
-                // Add the tile to the path array.
-                this.path.push(tile);
-            }
-
-            // TODO: Move towards the tile at the front of the path array.
-            var destination = this.path[0];
-            if (!destination) {
-                console.log("NO DESTINATION!!!!");
-            }
-            else {
-                console.log("MOVING TO TILE");
-                this.move(destination.x - this.x, destination.y - this.y);
-            }
+        if (destination) {
+            var dx = destination.x - this.x,
+                dy = destination.y - this.y;
+            this.move(dx, dy);
+        }
+        else {
+            console.log("NO DESTINATION!!!");
         }
     };
 }
