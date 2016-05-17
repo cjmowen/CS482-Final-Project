@@ -148,10 +148,7 @@ INTIALIZATION FUNCTIONS
 * Once the server has sent the map information, set up the game and play!
 */
 function initGame(mapData, status) {
-    console.log("Data received from server. Setting up game now.");
-
     // Set up the canvas.
-    console.log("Placing canvas.");
     var $element = $("<canvas></canvas>")
         .attr("id", "canvas")
         .attr("width", 800)
@@ -163,13 +160,11 @@ function initGame(mapData, status) {
     initMap(mapData);
     initGraphics();
 
-    setInterval(gameLoop, 20);
+    setInterval(gameLoop, 10);
 }
 
 
 function initMap(mapData) {
-    console.log("Initializing Map");
-
     game.walls = [];
     game.dungeon = [];
     game.monsters = [];
@@ -201,7 +196,6 @@ function initMap(mapData) {
 
 
 function initGraphics() {
-    console.log("Initializing Graphics");
     canvas = new fabric.Canvas("canvas", {
         selection: false,
         renderOnAddRemove: false
@@ -248,9 +242,9 @@ function update() {
 
     game.player.move(xDir, yDir);
 
-    game.monsters.forEach(function(monster, i) {
-        monster.doMove();
-    });
+    // game.monsters.forEach(function(monster, i) {
+    //     monster.doMove();
+    // });
 }
 
 
@@ -318,7 +312,6 @@ function Monster(xCoord, yCoord) {
 
         if (containsCreature(tile, game.player)) {
             // The player is in the current tile.
-            console.log("FOUND PLAYER");
             return true;
         }
         else {
@@ -334,7 +327,6 @@ function Monster(xCoord, yCoord) {
                     tile = game.dungeon[coord.x][coord.y];
                     if (tile instanceof Floor) {
                         if (containsCreature(tile, game.player)) {
-                            console.log("FOUND PLAYER");
                             return true;
                         }
                     }
@@ -353,16 +345,18 @@ function Monster(xCoord, yCoord) {
     }
 
     this.doMove = function() {
-        if (/*this.seesPlayer()*/ false) {
+        // TODO: To improve performance, calculate a long path to follow.
+        //       When the monster reaches the end of the path, pick a new one.
+        //       This should improve performance by reducing the number of calculations
+        //       made every tick.
+        if (this.seesPlayer()) {
             // Move directly towards the player.
-            console.log("CHASING PLAYER");
             this.chasingPlayer = true;
             this.path = [];
             this.move(game.player.x - this.x, game.player.y - this.y);
         }
         else {
             if (this.chasingPlayer) {
-                console.log("FINDING PLAYER");
                 // TODO: Find path to player.
                 // If a path can't be found, set chasingPlayer to false, but leave
                 // the current path in case the player is found along it.
@@ -373,8 +367,6 @@ function Monster(xCoord, yCoord) {
             }
 
             if (this.path.length === 0) {
-                console.log("FINDING NEXT TILE");
-                // TODO: Select a new tile to move to, and add it to the path.
                 // If there is no path to follow, find a tile to go to.
                 // First look at tiles forward, left, and right. Only if all of
                 // them are walls do we go backwards.
@@ -396,7 +388,6 @@ function Monster(xCoord, yCoord) {
                     }
 
                     if (tile instanceof Floor) {
-                        console.log("Choosing direction " + i);
                         this.facing = i;
                         break;
                     }
@@ -408,7 +399,6 @@ function Monster(xCoord, yCoord) {
 
                 if (tile === null) {
                     // Go backwards.
-                    console.log("Going backwards");
                     coord = this.getTileIndices();
                     this.facing = Direction.getBack(this.facing);
                     coord = Direction.getAdjacentCoords(coord.x, coord.y, this.facing);
@@ -421,13 +411,12 @@ function Monster(xCoord, yCoord) {
                 this.path.push(tile);
             }
 
-            // TODO: Move towards the tile at the front of the path array.
+            // Move towards the tile at the front of the path array.
             var destination = this.path[0];
             if (!destination) {
                 console.log("NO DESTINATION!!!!");
             }
             else {
-                console.log("MOVING TO TILE");
                 this.move(destination.x - this.x, destination.y - this.y);
             }
         }
@@ -449,12 +438,14 @@ function Creature(xCoord, yCoord, size, color, speed) {
         selectable: false,
         hasBorders: false
     });
-    this.g.on("moving", function(options) {
-        console.log("X: " + g.left + ", Y: " + g.top);
-    });
     this.movementSpeed = speed;
 
     this.move = function(dx, dy) {
+        // TODO: Optimize wall collision detection. Only check walls that are
+        //       immediately arround the creature. This should SIGNIFICANTLY
+        //       reduce the number of calculations made each tick. Also, find a
+        //       way to correct clipping with walls in one loop rather than 2.
+
         // Creatures should always move at the same speed. To do this, we take
         // the vector <dx, dy> and change it so that its magnitude is equal to
         // the creature's speed.
@@ -476,28 +467,28 @@ function Creature(xCoord, yCoord, size, color, speed) {
         if (dx > 0) xDir = 1;
         else if (dx < 0) xDir = -1;
 
-        // Check for wall collisions.
-        for (var i = 0, wall; i < game.walls.length; ++i) {
-            wall = game.walls[i];
-            while (collides(this, wall)) {
-                // Back off until collision no longer occurs.
-                this.g.left -= xDir;
-            }
-        }
+        // // Check for wall collisions.
+        // for (var i = 0, wall; i < game.walls.length; ++i) {
+        //     wall = game.walls[i];
+        //     while (collides(this, wall)) {
+        //         // Back off until collision no longer occurs.
+        //         this.g.left -= xDir;
+        //     }
+        // }
 
         this.g.top += dy;
         var yDir = 0;
         if (dy > 0) yDir = 1;
         else if (dy < 0) yDir = -1;
 
-        // Check for wall collisions.
-        for (var i = 0, wall; i < game.walls.length; ++i) {
-            wall = game.walls[i];
-            while (collides(this, wall)) {
-                // Back off until collision no longer occurs.
-                this.g.top -= yDir;
-            }
-        }
+        // // Check for wall collisions.
+        // for (var i = 0, wall; i < game.walls.length; ++i) {
+        //     wall = game.walls[i];
+        //     while (collides(this, wall)) {
+        //         // Back off until collision no longer occurs.
+        //         this.g.top -= yDir;
+        //     }
+        // }
 
         this.x = this.g.left;
         this.y = this.g.top;
