@@ -276,24 +276,3 @@ class Map:
 
     def __contains__(self, coordinate):
         return coordinate in self.maze
-
-m = Map()
-print m
-lst = m.toList()
-
-string = ""
-for y in range(len(lst[0])):
-    for x in range(len(lst)):
-        val = lst[x][y]
-        if val == 1:
-            string += "*"
-        elif val == 2:
-            string += "P"
-        elif val == 3:
-            string += "M"
-        else:
-            string+= " "
-
-    string += "\n"
-
-print string

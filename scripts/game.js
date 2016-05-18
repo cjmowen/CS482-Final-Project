@@ -1,7 +1,10 @@
 "use strict";
 
 
-var TILE_WIDTH = 200
+var TILE_WIDTH = 200,
+    CANVAS_WIDTH = 800,
+    CANVAS_HEIGHT = 600;
+
 var Direction = {
     NORTH: 0,
     EAST: 1,
@@ -68,7 +71,8 @@ var game = {
     monsters: null
 };
 
-var canvas,
+var stage,
+    world,
     wKey = false,
     aKey = false,
     sKey = false,
@@ -119,16 +123,6 @@ function keyUp(e) {
 }
 
 
-function collides(obj1, obj2) {
-    // These two lines fix a bug with fabric.Rect that causes
-    // intersectsWithObject to return a false negative.
-    obj1.g.setCoords();
-    obj2.g.setCoords();
-
-    return obj1.g.intersectsWithObject(obj2.g);
-}
-
-
 function containsCreature(tile, creature) {
     var bounds = {
         left: tile.x - TILE_WIDTH/2,
@@ -151,8 +145,8 @@ function initGame(mapData, status) {
     // Set up the canvas.
     var $element = $("<canvas></canvas>")
         .attr("id", "canvas")
-        .attr("width", 800)
-        .attr("height", 600);
+        .attr("width", CANVAS_WIDTH)
+        .attr("height", CANVAS_HEIGHT);
 
     $("#content").empty().append($element);
 
@@ -160,7 +154,7 @@ function initGame(mapData, status) {
     initMap(mapData);
     initGraphics();
 
-    setInterval(gameLoop, 10);
+    setInterval(gameLoop, 20);
 }
 
 
@@ -196,20 +190,19 @@ function initMap(mapData) {
 
 
 function initGraphics() {
-    canvas = new fabric.Canvas("canvas", {
-        selection: false,
-        renderOnAddRemove: false
-    });
+    stage = new createjs.Stage("canvas");
+    world = new createjs.Container();
 
     game.walls.forEach(function(wall, i) {
-        canvas.add(wall.g);
+        world.addChild(wall.shape);
     });
 
     game.monsters.forEach(function(monster, i) {
-        canvas.add(monster.g);
+        world.addChild(monster.shape);
     });
 
-    canvas.add(game.player.g);
+    world.addChild(game.player.shape);
+    stage.addChild(world);
 }
 
 
@@ -221,13 +214,10 @@ function gameLoop() {
     draw();
 }
 
-
 function draw() {
-    var x = game.player.x - canvas.width/2,
-        y = game.player.y - canvas.height/2;
-
-    canvas.absolutePan(new fabric.Point(x, y));
-    canvas.renderAll()
+    world.regX = game.player.x - CANVAS_WIDTH/2;
+    world.regY = game.player.y - CANVAS_HEIGHT/2;
+    stage.update();
 }
 
 
@@ -242,9 +232,9 @@ function update() {
 
     game.player.move(xDir, yDir);
 
-    // game.monsters.forEach(function(monster, i) {
-    //     monster.doMove();
-    // });
+    game.monsters.forEach(function(monster, i) {
+        monster.doMove();
+    });
 }
 
 
@@ -255,22 +245,11 @@ function Wall(x, y) {
     this.prototype = Tile;
     this.prototype(x, y);
 
-    this.size = TILE_WIDTH;
-    this.g = new fabric.Rect({
-        left: x,
-        top: y,
-        originX: "center",
-        originY: "center",
-        fill: "red",
-
-        // Slight gaps sometimes appear between wall tiles (probably due to
-        // minor rounding errors when centering the rectangle). To fix this,
-        // we make them slightly bigger. TODO: Find a better fix for wall gaps.
-        width: TILE_WIDTH + 1,
-        height: TILE_WIDTH + 1,
-        selectable: false,
-        hasBorders: false
-    });
+    this.size = TILE_WIDTH + 2;
+    this.shape = new createjs.Shape();
+    this.shape.graphics.beginFill("red").drawRect(0, 0, this.size, this.size);
+    this.shape.x = x - this.size/2;
+    this.shape.y = y - this.size/2;
 }
 
 function Floor(x, y) {
@@ -281,22 +260,23 @@ function Floor(x, y) {
 function Tile(x, y) {
     this.x = x;
     this.y = y;
+    this.profile = "square"
     this.getIndices = function() {
         return {
-            "x": Math.round(this.x / TILE_WIDTH),
-            "y": Math.round(this.y / TILE_WIDTH)
+            "x": Math.round(x / TILE_WIDTH),
+            "y": Math.round(y / TILE_WIDTH)
         };
     };
 }
 
 function Player(xCoord, yCoord) {
     this.prototype = Creature;
-    this.prototype(xCoord, yCoord, 50, "blue", 10);
+    this.prototype(xCoord, yCoord, 20, "blue", 12);
 }
 
 function Monster(xCoord, yCoord) {
     this.prototype = Creature;
-    this.prototype(xCoord, yCoord, 60, "green", 5);
+    this.prototype(xCoord, yCoord, 30, "green", 5);
 
     // Pick a random starting direction.
     this.facing = Math.floor(Math.random() * 4);
@@ -318,6 +298,7 @@ function Monster(xCoord, yCoord) {
             for (var dir = 0; dir <= 3; ++dir) {
                 var coord = this.getTileIndices();
                 tile = null;
+
                 do {
                     coord = Direction.getAdjacentCoords(coord.x, coord.y, dir);
                     // Don't bother looking outside the bounds of the map.
@@ -427,17 +408,12 @@ function Monster(xCoord, yCoord) {
 function Creature(xCoord, yCoord, size, color, speed) {
     this.x = xCoord;
     this.y = yCoord;
-    this.g = new fabric.Rect({
-        left: xCoord,
-        top: yCoord,
-        originX: "center",
-        originY: "center",
-        fill: color,
-        width: size,
-        height: size,
-        selectable: false,
-        hasBorders: false
-    });
+    this.size = size;
+    this.profile = "circle";
+    this.shape = new createjs.Shape();
+    this.shape.graphics.beginFill(color).drawCircle(0, 0, size);
+    this.shape.x = this.x;
+    this.shape.y = this.y;
     this.movementSpeed = speed;
 
     this.move = function(dx, dy) {
@@ -462,36 +438,29 @@ function Creature(xCoord, yCoord, size, color, speed) {
             dy = dy * (this.movementSpeed / m);
         }
 
-        this.g.left += dx;
-        var xDir = 0;
-        if (dx > 0) xDir = 1;
-        else if (dx < 0) xDir = -1;
+        var creature = {x: this.x + dx, y: this.y + dy, r: this.size};
+        var wall = {x: 0, y: 0, w: 0, h: 0};
 
-        // // Check for wall collisions.
-        // for (var i = 0, wall; i < game.walls.length; ++i) {
-        //     wall = game.walls[i];
-        //     while (collides(this, wall)) {
-        //         // Back off until collision no longer occurs.
-        //         this.g.left -= xDir;
-        //     }
-        // }
+        for (var i = 0, w; i < game.walls.length; ++i) {
+            w = game.walls[i];
+            wall.x = w.shape.x;
+            wall.y = w.shape.y;
+            wall.w = w.size;
+            wall.h = w.size;
+            if (collides(creature, wall)) {
+                var bounce;
+                do {
+                    bounce = bounces(creature, wall);
+                    if (bounce.x) creature.x += bounce.x;
+                    if (bounce.y) creature.y += bounce.y;
+                } while (collides(creature, wall));
+            }
+        }
 
-        this.g.top += dy;
-        var yDir = 0;
-        if (dy > 0) yDir = 1;
-        else if (dy < 0) yDir = -1;
-
-        // // Check for wall collisions.
-        // for (var i = 0, wall; i < game.walls.length; ++i) {
-        //     wall = game.walls[i];
-        //     while (collides(this, wall)) {
-        //         // Back off until collision no longer occurs.
-        //         this.g.top -= yDir;
-        //     }
-        // }
-
-        this.x = this.g.left;
-        this.y = this.g.top;
+        this.x = creature.x;
+        this.y = creature.y;
+        this.shape.x = creature.x;
+        this.shape.y = creature.y;
     };
 
     this.getTileIndices = function() {
@@ -500,4 +469,72 @@ function Creature(xCoord, yCoord, size, color, speed) {
 
         return {"x": x, "y": y};
     };
+}
+
+
+/*******************************************************************************
+BORROWED CODE
+
+The collides and bounces functions are slightly modified versions of code posted
+by Stack Overflow user kuroi neko.
+    http://stackoverflow.com/questions/21089959/detecting-collision-of-rectangle-with-circle
+******************************************************************************/
+function collides(circle, rect) {
+    // compute a center-to-center vector
+    var half = { x: rect.w/2, y: rect.h/2 };
+    var center = {
+        x: circle.x - (rect.x+half.x),
+        y: circle.y - (rect.y+half.y)};
+
+    // check circle position inside the rectangle quadrant
+    var side = {
+        x: Math.abs (center.x) - half.x,
+        y: Math.abs (center.y) - half.y};
+    if (side.x >  circle.r || side.y >  circle.r) // outside
+        return false;
+    if (side.x < -circle.r && side.y < -circle.r) // inside
+        return true;
+    if (side.x < 0 || side.y < 0) // intersects side or corner
+        return true;
+
+    // circle is near the corner
+    return side.x*side.x + side.y*side.y  < circle.r*circle.r;
+}
+
+function bounces(circle, rect) {
+    // compute a center-to-center vector
+    var half = { x: rect.w/2, y: rect.h/2 };
+    var center = {
+        x: circle.x - (rect.x+half.x),
+        y: circle.y - (rect.y+half.y)};
+
+    // check circle position inside the rectangle quadrant
+    var side = {
+        x: Math.abs (center.x) - half.x,
+        y: Math.abs (center.y) - half.y};
+    if (side.x >  circle.r || side.y >  circle.r) // outside
+        return { bounce: false };
+    if (side.x < -circle.r && side.y < -circle.r) // inside
+        return { bounce: false };
+    if (side.x < 0 || side.y < 0) // intersects side or corner
+    {
+        var dx = 0, dy = 0;
+        if (Math.abs (side.x) < circle.r && side.y < 0)
+        {
+            dx = center.x*side.x < 0 ? -1 : 1;
+        }
+        else if (Math.abs (side.y) < circle.r && side.x < 0)
+        {
+            dy = center.y*side.y < 0 ? -1 : 1;
+        }
+
+        return { bounce: true, x:dx, y:dy };
+    }
+    // circle is near the corner
+    var bounce = side.x*side.x + side.y*side.y  < circle.r*circle.r;
+    if (!bounce) return { bounce:false }
+    var norm = Math.sqrt (side.x*side.x+side.y*side.y);
+    var dx = center.x < 0 ? -1 : 1;
+    var dy = center.y < 0 ? -1 : 1;
+    return { bounce:true, x: dx*side.x/norm, y: dy*side.y/norm };
 }
