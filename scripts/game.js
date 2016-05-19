@@ -64,15 +64,12 @@ var Direction = {
     }
 };
 
-var game = {
-    dungeon: null,
-    walls: null,
-    player: null,
-    monsters: null
-};
-
 var stage,
     world,
+    game,
+    ui,
+    gameLoopIntervalHandle,
+    gameSpeed = 20,
     wKey = false,
     aKey = false,
     sKey = false,
@@ -89,19 +86,24 @@ $(function(){
 
 
 function keyDown(e) {
-    switch (e.keyCode) {
-        case 87:
+    if (game.over) {
+        reset();
+    }
+    else {
+        switch (e.keyCode) {
+            case 87:
             wKey = true;
             break;
-        case 83:
+            case 83:
             sKey = true;
             break;
-        case 65:
+            case 65:
             aKey = true;
             break;
-        case 68:
+            case 68:
             dKey = true;
             break;
+        }
     }
 }
 
@@ -122,7 +124,6 @@ function keyUp(e) {
     }
 }
 
-
 function containsCreature(tile, creature) {
     var bounds = {
         left: tile.x - TILE_WIDTH/2,
@@ -134,6 +135,64 @@ function containsCreature(tile, creature) {
     return creature.x > bounds.left && creature.x < bounds.right && creature.y > bounds.top && creature.y < bounds.bottom;
 }
 
+function cheat(on) {
+    if (on) {
+        game.player.solid = false;
+        game.player.hasKey = true;
+    }
+    else {
+        game.player.solid = true;
+    }
+}
+
+function winGame() {
+    game.over = true;
+
+    showEndGameOverlay();
+
+    var winText = new createjs.Text("You escaped!", "60px Merriweather Sans", "white");
+    winText.textAlign = "center";
+    winText.textBaseline = "middle";
+    winText.x = CANVAS_WIDTH/2;
+    winText.y = CANVAS_HEIGHT/2 - 30;
+    ui.stage.addChild(winText);
+}
+
+function loseGame() {
+    game.over = true;
+
+    showEndGameOverlay();
+
+    var winText = new createjs.Text("You died", "60px Merriweather Sans", "white");
+    winText.textAlign = "center";
+    winText.textBaseline = "middle";
+    winText.x = CANVAS_WIDTH/2;
+    winText.y = CANVAS_HEIGHT/2 - 30;
+    ui.stage.addChild(winText);
+}
+
+function showEndGameOverlay() {
+    var bg = new createjs.Shape()
+    bg.graphics.beginFill("white").drawRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    bg.alpha = .3;
+    ui.stage.addChild(bg);
+
+    var overlay = new createjs.Shape();
+    overlay.graphics.beginFill("black").drawRect(0, CANVAS_HEIGHT/2 - 100, CANVAS_WIDTH, 200);
+    overlay.alpha = .6
+    ui.stage.addChild(overlay);
+
+    var overlayBorder = new createjs.Shape();
+    overlayBorder.graphics.beginStroke("black").setStrokeStyle(10).drawRect(-50, CANVAS_HEIGHT/2 - 100, CANVAS_WIDTH + 100, 200);
+    ui.stage.addChild(overlayBorder);
+
+    var replayText = new createjs.Text("Press any key to play again", "18px Merriweather Sans", "white");
+    replayText.textAlign = "center";
+    replayText.textBaseline = "middle";
+    replayText.x = CANVAS_WIDTH/2;
+    replayText.y = CANVAS_HEIGHT/2 + 40;
+    ui.stage.addChild(replayText);
+}
 
 /*******************************************************************************
 INTIALIZATION FUNCTIONS
@@ -142,19 +201,45 @@ INTIALIZATION FUNCTIONS
 * Once the server has sent the map information, set up the game and play!
 */
 function initGame(mapData, status) {
+    game = {
+        dungeon: null,
+        walls: null,
+        player: null,
+        monsters: null,
+        door: null,
+        key: null,
+        goal: null,
+        over: false
+    };
+
+    ui = {
+        stage: null,
+        keyIcon: null,
+        key: null
+    };
+
+    wKey = false;
+    aKey = false;
+    sKey = false;
+    dKey = false;
+
     // Set up the canvas.
-    var $element = $("<canvas></canvas>")
+    var $mainCanvas = $("<canvas></canvas>")
         .attr("id", "canvas")
         .attr("width", CANVAS_WIDTH)
         .attr("height", CANVAS_HEIGHT);
+    var $uiCanvas = $("<canvas></canvas>")
+        .attr("id", "uiCanvas")
+        .attr("width", CANVAS_WIDTH)
+        .attr("height", CANVAS_HEIGHT);
 
-    $("#content").empty().append($element);
+    $("#content").empty().append($mainCanvas, $uiCanvas);
 
     // Set up the map.
     initMap(mapData);
     initGraphics();
 
-    setInterval(gameLoop, 20);
+    gameLoopIntervalHandle = setInterval(gameLoop, gameSpeed);
 }
 
 
@@ -182,6 +267,19 @@ function initMap(mapData) {
                     tile = new Floor(x*TILE_WIDTH, y*TILE_WIDTH);
                     game.monsters.push(new Monster(x*TILE_WIDTH, y*TILE_WIDTH));
                     break;
+                case 8:
+                    tile = new Goal(x*TILE_WIDTH, y*TILE_WIDTH);
+                    game.goal = tile;
+                    game.walls.push(tile);
+
+                    tile = new Door(x*TILE_WIDTH, y*TILE_WIDTH);
+                    game.door = tile;
+                    game.walls.push(tile);
+                    break;
+                case 9:
+                    tile = new Floor(x*TILE_WIDTH, y*TILE_WIDTH);
+                    game.key = new Key(x*TILE_WIDTH, y*TILE_WIDTH);
+                    break;
             }
             game.dungeon[x][y] = tile;
         }
@@ -190,6 +288,11 @@ function initMap(mapData) {
 
 
 function initGraphics() {
+    initGameGraphics();
+    initUIGraphics();
+}
+
+function initGameGraphics() {
     stage = new createjs.Stage("canvas");
     world = new createjs.Container();
 
@@ -201,8 +304,58 @@ function initGraphics() {
         world.addChild(monster.shape);
     });
 
+    world.addChild(game.door.shape);
+    world.addChild(game.key.shape);
     world.addChild(game.player.shape);
     stage.addChild(world);
+}
+
+function initUIGraphics() {
+    ui.stage = new createjs.Stage("uiCanvas");
+
+    ui.keyIcon = new createjs.Container();
+    ui.keyIcon.setTransform(CANVAS_WIDTH - 60, 60);
+    ui.stage.addChild(ui.keyIcon);
+
+    // Start drawing the key.
+    ui.key = new createjs.Container();
+    ui.key.setTransform(-17, 17, 1, 1, -45);
+    ui.keyIcon.addChild(ui.key);
+
+    // The key handle.
+    var keyPart = new createjs.Shape();
+    keyPart.graphics.beginStroke("yellow").setStrokeStyle(10).drawCircle(0, 0, 12);
+    ui.key.addChild(keyPart);
+
+    // The key shaft
+    keyPart = new createjs.Shape();
+    keyPart.graphics.beginFill("yellow").drawRect(12, -5, 50, 10);
+    ui.key.addChild(keyPart);
+
+    // The key teeth.
+    var keyTeeth = new createjs.Container();
+    ui.key.addChild(keyTeeth);
+
+    // The furthest tooth.
+    keyPart = new createjs.Shape();
+    keyPart.graphics.beginFill("yellow").drawRect(55, 0, 7, 15);
+    keyTeeth.addChild(keyPart);
+
+    // The closest tooth.
+    keyPart = new createjs.Shape();
+    keyPart.graphics.beginFill("yellow").drawRect(43, 0, 7, 15);
+    keyTeeth.addChild(keyPart);
+
+    var keyIconBG = new createjs.Shape();
+    keyIconBG.graphics.beginFill("rgba(0, 0, 0, 0.3)").drawCircle(0, 0, 50);
+    ui.keyIcon.addChild(keyIconBG);
+}
+
+function reset() {
+    clearInterval(gameLoopIntervalHandle);
+    // TODO: get new map data
+
+    $.post("/game", initGame);
 }
 
 
@@ -210,14 +363,49 @@ function initGraphics() {
 GAME LOOP FUNCTIONS
 *******************************************************************************/
 function gameLoop() {
-    update();
+    if (game.over == false) {
+        update();
+    }
     draw();
 }
 
 function draw() {
-    world.regX = game.player.x - CANVAS_WIDTH/2;
-    world.regY = game.player.y - CANVAS_HEIGHT/2;
-    stage.update();
+    if (game.over == false) {
+        world.regX = game.player.x - CANVAS_WIDTH/2;
+        world.regY = game.player.y - CANVAS_HEIGHT/2;
+        stage.update();
+
+        var keyString = "";
+        if (game.player.hasKey) {
+            keyString = "Key: FOUND";
+            ui.keyIcon.setChildIndex(ui.key, ui.keyIcon.getNumChildren() - 1);
+        }
+        else {
+            keyString = "Key   (" + (game.key.x - game.player.x) + ", " + (game.key.y - game.player.y) + ")";
+            ui.keyIcon.setChildIndex(ui.key, 0);
+        }
+
+        var doorString = "Door (" + (game.door.x - game.player.x) + ", " + (game.door.y - game.player.y) + ")";
+
+        if (!ui.keyText) {
+            var text = new createjs.Text(keyString, "30px Merriweather Sans", "purple");
+            text.x = 20;
+            text.y = 20;
+            ui.stage.addChild(text);
+            ui.keyText = text;
+        }
+        if (!ui.doorText) {
+            var text = new createjs.Text(doorString, "30px Merriweather Sans", "purple");
+            text.x = 20;
+            text.y = 60;
+            ui.stage.addChild(text);
+            ui.doorText = text
+        }
+
+        ui.keyText.text = keyString;
+        ui.doorText.text = doorString;
+    }
+    ui.stage.update();
 }
 
 
@@ -230,8 +418,7 @@ function update() {
     if (aKey) --xDir;
     if (dKey) ++xDir;
 
-    game.player.move(xDir, yDir);
-
+    game.player.doMove(xDir, yDir);
     game.monsters.forEach(function(monster, i) {
         monster.doMove();
     });
@@ -247,7 +434,52 @@ function Wall(x, y) {
 
     this.size = TILE_WIDTH + 2;
     this.shape = new createjs.Shape();
-    this.shape.graphics.beginFill("red").drawRect(0, 0, this.size, this.size);
+    this.shape.graphics.beginFill("black").drawRect(0, 0, this.size, this.size);
+    this.shape.x = x - this.size/2;
+    this.shape.y = y - this.size/2;
+}
+
+function Door(x, y) {
+    this.prototype = Tile;
+    this.prototype(x, y);
+
+    this.size = TILE_WIDTH + 2;
+    this.locked = true;
+
+    // The door is comprised of multiple graphical parts.
+    this.shape = new createjs.Container();
+    this.shape.x = x - this.size/2;
+    this.shape.y = y - this.size/2;
+
+    // Draw the door.
+    var elem = new createjs.Shape();
+    elem.graphics.beginFill("brown").drawRect(0, 0, this.size, this.size);
+    this.shape.addChild(elem);
+
+    // Draw the key hole, which also involves multiple pieces.
+    var keyHole = new createjs.Container();
+    keyHole.x = this.size/2;
+    keyHole.y = this.size/2 - 25;
+    elem = new createjs.Shape();
+    elem.graphics.beginFill("black").drawCircle(0, 0, 25);
+    elem.x = 0;
+    elem.y = 0;
+    keyHole.addChild(elem);
+
+    elem = new createjs.Shape();
+    elem.graphics.beginFill("black").drawRect(-15, 0, 30, 75);
+    elem.x = 0;
+    elem.y = 0;
+    keyHole.addChild(elem);
+
+    this.shape.addChild(keyHole);
+}
+
+function Goal(x, y) {
+    this.prototype = Tile;
+    this.prototype(x, y);
+    this.size = TILE_WIDTH - 10;
+    this.shape = new createjs.Container();
     this.shape.x = x - this.size/2;
     this.shape.y = y - this.size/2;
 }
@@ -271,12 +503,28 @@ function Tile(x, y) {
 
 function Player(xCoord, yCoord) {
     this.prototype = Creature;
-    this.prototype(xCoord, yCoord, 20, "blue", 12);
+    this.prototype(xCoord, yCoord, 20, "blue", 10);
+    this.hasKey = false;
+    this.alive = true;
+
+    this.doMove = function(dx, dy) {
+        this.move(dx, dy);
+        if (this.hasKey === false) {
+            var keyDistX = game.key.x - this.x;
+            var keyDistY = game.key.y - this.y;
+            var keyDist = Math.sqrt(keyDistX*keyDistX + keyDistY*keyDistY);
+            if (keyDist <= this.size + game.key.size) {
+                // Pick up the key.
+                this.hasKey = true;
+                world.removeChild(game.key.shape);
+            }
+        }
+    }
 }
 
 function Monster(xCoord, yCoord) {
     this.prototype = Creature;
-    this.prototype(xCoord, yCoord, 30, "green", 5);
+    this.prototype(xCoord, yCoord, 25, "green", 4);
 
     // Pick a random starting direction.
     this.facing = Math.floor(Math.random() * 4);
@@ -326,10 +574,6 @@ function Monster(xCoord, yCoord) {
     }
 
     this.doMove = function() {
-        // TODO: To improve performance, calculate a long path to follow.
-        //       When the monster reaches the end of the path, pick a new one.
-        //       This should improve performance by reducing the number of calculations
-        //       made every tick.
         if (this.seesPlayer()) {
             // Move directly towards the player.
             this.chasingPlayer = true;
@@ -409,7 +653,7 @@ function Creature(xCoord, yCoord, size, color, speed) {
     this.x = xCoord;
     this.y = yCoord;
     this.size = size;
-    this.profile = "circle";
+    this.solid = true;
     this.shape = new createjs.Shape();
     this.shape.graphics.beginFill(color).drawCircle(0, 0, size);
     this.shape.x = this.x;
@@ -448,12 +692,28 @@ function Creature(xCoord, yCoord, size, color, speed) {
             wall.w = w.size;
             wall.h = w.size;
             if (collides(creature, wall)) {
-                var bounce;
-                do {
-                    bounce = bounces(creature, wall);
-                    if (bounce.x) creature.x += bounce.x;
-                    if (bounce.y) creature.y += bounce.y;
-                } while (collides(creature, wall));
+                if (w == game.door && this.hasKey) {
+                    game.walls.splice(game.walls.indexOf(w), 1);
+                    world.removeChild(w.shape);
+                    game.door.locked = false;
+                }
+                else if (this == game.player && w instanceof Goal && game.door.locked == false) {
+                    winGame();
+                }
+                else if (this.solid){
+                    var bounce;
+                    do {
+                        bounce = bounces(creature, wall);
+
+                        // Occasionally bounces will return <0, 0> for the bounce
+                        // vector, but collides will say that there is still a
+                        // collision. We can just ignore the collision in these
+                        // rare cases.
+                        if (bounce.x == 0 && bounce.y == 0) break;
+                        if (bounce.x) creature.x += bounce.x;
+                        if (bounce.y) creature.y += bounce.y;
+                    } while (collides(creature, wall));
+                }
             }
         }
 
@@ -469,6 +729,41 @@ function Creature(xCoord, yCoord, size, color, speed) {
 
         return {"x": x, "y": y};
     };
+}
+
+
+function Key(x, y) {
+    this.x = x;
+    this.y = y;
+    this.size = 25;
+    this.shape = new createjs.Container();
+    this.shape.setTransform(x, y, 1, 1, -45);
+
+    var key = new createjs.Container();
+    this.shape.addChild(key);
+    key.x = -12;
+
+    // Key handle.
+    var keyPart = new createjs.Shape();
+    keyPart.graphics.beginStroke("yellow").setStrokeStyle(4).drawCircle(0, 0, 7);
+    key.addChild(keyPart);
+
+    // Key shaft.
+    keyPart = new createjs.Shape();
+    keyPart.graphics.beginFill("yellow").drawRect(7, -2, 25, 4);
+    key.addChild(keyPart);
+
+    // Key teeth.
+    var teeth = new createjs.Container();
+    key.addChild(teeth);
+
+    keyPart = new createjs.Shape();
+    keyPart.graphics.beginFill("yellow").drawRect(29, 0, 3, 7);
+    teeth.addChild(keyPart);
+
+    keyPart = new createjs.Shape();
+    keyPart.graphics.beginFill("yellow").drawRect(24, 0, 3, 7);
+    teeth.addChild(keyPart);
 }
 
 

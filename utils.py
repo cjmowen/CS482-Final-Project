@@ -26,7 +26,9 @@ _gameObjects = {
     "floor": 0,
     "wall": 1,
     "player": 2,
-    "monster": 3
+    "monster": 3,
+    "door": 8,
+    "key": 9
     }
 
 def getAdjCoords(x, y, dir):
@@ -54,6 +56,7 @@ class Tile:
             }
         self.visited = False
         self.spawn = None
+        self.exit = None
         self.x = x
         self.y = y
 
@@ -102,6 +105,7 @@ class Map:
         self.makePaths()
         self.setPlayerSpawn()
         self.setMonsterSpawns(4) # TODO: Have variable number of monsters depending on map size.
+        self.setExitAndKey()
 
     def getRandomCoord(self):
 
@@ -175,6 +179,52 @@ class Map:
 
             tile.spawn = "monster"
 
+    def setExitAndKey(self):
+
+        # Pick which side of the map the exit will be on, then randomly select
+        # where on that side it will be.
+        side = random.choice(_directions)
+
+        if side == "north" or side == "south":
+            if side == "north":
+                y = 0
+            else:
+                y = self.height - 1
+
+            x = random.randint(0, self.width - 1)
+        else:
+            if side == "east":
+                x = self.width - 1
+            else:
+                x = 0
+
+            y = random.randint(1, self.height - 1)
+
+        self.maze[(x, y)].exit = side
+
+        # Now find coordinates to place the key.
+        x = (x + (self.width/2)*random.choice([-1, 1])) % self.width
+        y = (y + (self.height/2)*random.choice([-1, 1])) % self.height
+
+        increment = 0
+        tile = None
+        while tile == None or tile.spawn != None or tile.exit != None:
+            # Spiral outwards until a valid tile is found to put the key in.
+            direction = increment % 4
+            if direction == 0:
+                x += increment
+            elif direction == 1:
+                y += increment
+            elif direction == 3:
+                x -= increment
+            else:
+                y -= increment
+
+            tile = self.maze[(x, y)]
+            increment += 1
+
+        tile.spawn = "key"
+
     def isOutOfBounds(self, x, y):
 
         return x < 0 or x >= self.width or y < 0 or y >= self.height
@@ -182,12 +232,7 @@ class Map:
     def toList(self):
 
         # Each tile is represented in the 2D list as a 3x3 square of numbers.
-        # Numbers represent objects in the game as follows:
-        #   0: Empty floor
-        #   1: Wall
-        #   2: Player spawn
-        #   3: Monster spawn
-        #
+        # Numbers represent objects in the game as listed in _gameObjects.
         # We convert tile coordinates to list indices like so:
         #   i = 3*c + k
         #
@@ -224,6 +269,12 @@ class Map:
                 if tile.paths["east"]:  result[x3][y2] = 0
                 if tile.paths["south"]: result[x2][y3] = 0
                 if tile.paths["west"]:  result[x1][y2] = 0
+                if tile.exit != None:
+                    if   tile.exit == "north": result[x2][y1] = 8
+                    elif tile.exit == "east":  result[x3][y2] = 8
+                    elif tile.exit == "south": result[x2][y3] = 8
+                    elif tile.exit == "west":  result[x1][y2] = 8
+
 
         return result
 
@@ -276,3 +327,13 @@ class Map:
 
     def __contains__(self, coordinate):
         return coordinate in self.maze
+
+# m = Map()
+# l = m.toList()
+# result = ""
+# for y in range(len(l[0])):
+#     for x in range(len(l)):
+#         result += str(l[x][y])
+#     result += "\n"
+#
+# print result

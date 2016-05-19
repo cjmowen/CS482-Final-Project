@@ -38,7 +38,7 @@ class MainHandler(webapp2.RequestHandler):
 class GameHandler(webapp2.RequestHandler):
     def post(self):
         # TODO: set player, monster, and key spawns
-        map = utils.Map(20, 20).toList()
+        map = utils.Map(10, 10).toList()
         self.response.headers["Content-Type"] = "application/json"
         self.response.write(json.dumps(map))
 
