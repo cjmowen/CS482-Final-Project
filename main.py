@@ -28,16 +28,12 @@ jEnv = jinja2.Environment(autoescape=True,
 
 class MainHandler(webapp2.RequestHandler):
     def get(self):
-        # TODO: Send a start page where the player can press a button to
-        # start the game. Optionally, the player may be able to set certain
-        # options for the game (map size, game type, difficulty, etc.).
         template = jEnv.get_template("index.html")
         self.response.write(template.render())
 
 
 class GameHandler(webapp2.RequestHandler):
     def post(self):
-        # TODO: set player, monster, and key spawns
         map = utils.Map(10, 10).toList()
         self.response.headers["Content-Type"] = "application/json"
         self.response.write(json.dumps(map))

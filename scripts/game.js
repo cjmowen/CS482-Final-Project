@@ -3,7 +3,7 @@
 
 var TILE_WIDTH = 200,
     CANVAS_WIDTH = 800,
-    CANVAS_HEIGHT = 600;
+    CANVAS_HEIGHT = 500;
 
 var Direction = {
     NORTH: 0,
@@ -133,6 +133,16 @@ function containsCreature(tile, creature) {
     };
 
     return creature.x > bounds.left && creature.x < bounds.right && creature.y > bounds.top && creature.y < bounds.bottom;
+}
+
+function collidesCircle(obj1, obj2, leeway) {
+    var distX = obj2.x - obj1.x;
+    var distY = obj2.y - obj1.y;
+    var dist = Math.sqrt(distX*distX + distY*distY);
+
+    if (!leeway) leeway = 0;
+
+    return dist <= obj1.size + obj2.size;
 }
 
 function cheat(on) {
@@ -353,8 +363,6 @@ function initUIGraphics() {
 
 function reset() {
     clearInterval(gameLoopIntervalHandle);
-    // TODO: get new map data
-
     $.post("/game", initGame);
 }
 
@@ -375,35 +383,36 @@ function draw() {
         world.regY = game.player.y - CANVAS_HEIGHT/2;
         stage.update();
 
-        var keyString = "";
-        if (game.player.hasKey) {
-            keyString = "Key: FOUND";
-            ui.keyIcon.setChildIndex(ui.key, ui.keyIcon.getNumChildren() - 1);
-        }
-        else {
-            keyString = "Key   (" + (game.key.x - game.player.x) + ", " + (game.key.y - game.player.y) + ")";
-            ui.keyIcon.setChildIndex(ui.key, 0);
-        }
-
-        var doorString = "Door (" + (game.door.x - game.player.x) + ", " + (game.door.y - game.player.y) + ")";
-
-        if (!ui.keyText) {
-            var text = new createjs.Text(keyString, "30px Merriweather Sans", "purple");
-            text.x = 20;
-            text.y = 20;
-            ui.stage.addChild(text);
-            ui.keyText = text;
-        }
-        if (!ui.doorText) {
-            var text = new createjs.Text(doorString, "30px Merriweather Sans", "purple");
-            text.x = 20;
-            text.y = 60;
-            ui.stage.addChild(text);
-            ui.doorText = text
-        }
-
-        ui.keyText.text = keyString;
-        ui.doorText.text = doorString;
+        // // TEST
+        // var keyString = "";
+        // if (game.player.hasKey) {
+        //     keyString = "Key: FOUND";
+        //     ui.keyIcon.setChildIndex(ui.key, ui.keyIcon.getNumChildren() - 1);
+        // }
+        // else {
+        //     keyString = "Key   (" + (game.key.x - game.player.x) + ", " + (game.key.y - game.player.y) + ")";
+        //     ui.keyIcon.setChildIndex(ui.key, 0);
+        // }
+        //
+        // var doorString = "Door (" + (game.door.x - game.player.x) + ", " + (game.door.y - game.player.y) + ")";
+        //
+        // if (!ui.keyText) {
+        //     var text = new createjs.Text(keyString, "30px Merriweather Sans", "purple");
+        //     text.x = 20;
+        //     text.y = 20;
+        //     ui.stage.addChild(text);
+        //     ui.keyText = text;
+        // }
+        // if (!ui.doorText) {
+        //     var text = new createjs.Text(doorString, "30px Merriweather Sans", "purple");
+        //     text.x = 20;
+        //     text.y = 60;
+        //     ui.stage.addChild(text);
+        //     ui.doorText = text
+        // }
+        //
+        // ui.keyText.text = keyString;
+        // ui.doorText.text = doorString;
     }
     ui.stage.update();
 }
@@ -478,6 +487,7 @@ function Door(x, y) {
 function Goal(x, y) {
     this.prototype = Tile;
     this.prototype(x, y);
+
     this.size = TILE_WIDTH - 10;
     this.shape = new createjs.Container();
     this.shape.x = x - this.size/2;
@@ -504,19 +514,24 @@ function Tile(x, y) {
 function Player(xCoord, yCoord) {
     this.prototype = Creature;
     this.prototype(xCoord, yCoord, 20, "blue", 10);
+
     this.hasKey = false;
     this.alive = true;
 
     this.doMove = function(dx, dy) {
         this.move(dx, dy);
         if (this.hasKey === false) {
-            var keyDistX = game.key.x - this.x;
-            var keyDistY = game.key.y - this.y;
-            var keyDist = Math.sqrt(keyDistX*keyDistX + keyDistY*keyDistY);
-            if (keyDist <= this.size + game.key.size) {
+            if (collidesCircle(game.player, game.key)) {
                 // Pick up the key.
                 this.hasKey = true;
                 world.removeChild(game.key.shape);
+            }
+        }
+
+        for (var i = 0, m; i < game.monsters.length; ++i) {
+            m = game.monsters[i];
+            if (collidesCircle(game.player, m)) {
+                loseGame();
             }
         }
     }
@@ -566,13 +581,6 @@ function Monster(xCoord, yCoord) {
         return false;
     }
 
-    this.findPlayer = function() {
-        // TODO: Find player.
-        // Return a path to the player, or an empty path if none can be found.
-        // The path should be no longer than maxChaseDistance.
-
-    }
-
     this.doMove = function() {
         if (this.seesPlayer()) {
             // Move directly towards the player.
@@ -581,13 +589,7 @@ function Monster(xCoord, yCoord) {
             this.move(game.player.x - this.x, game.player.y - this.y);
         }
         else {
-            if (this.chasingPlayer) {
-                // TODO: Find path to player.
-                // If a path can't be found, set chasingPlayer to false, but leave
-                // the current path in case the player is found along it.
-                this.chasingPlayer = false; // TESTING
-            }
-            else if (this.path.length > 0 && containsCreature(this.path[0], this)) {
+            if (this.path.length > 0 && containsCreature(this.path[0], this)) {
                 this.path.shift();
             }
 
@@ -661,11 +663,6 @@ function Creature(xCoord, yCoord, size, color, speed) {
     this.movementSpeed = speed;
 
     this.move = function(dx, dy) {
-        // TODO: Optimize wall collision detection. Only check walls that are
-        //       immediately arround the creature. This should SIGNIFICANTLY
-        //       reduce the number of calculations made each tick. Also, find a
-        //       way to correct clipping with walls in one loop rather than 2.
-
         // Creatures should always move at the same speed. To do this, we take
         // the vector <dx, dy> and change it so that its magnitude is equal to
         // the creature's speed.

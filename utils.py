@@ -104,7 +104,7 @@ class Map:
 
         self.makePaths()
         self.setPlayerSpawn()
-        self.setMonsterSpawns(4) # TODO: Have variable number of monsters depending on map size.
+        self.setMonsterSpawns(5)
         self.setExitAndKey()
 
     def getRandomCoord(self):
@@ -169,7 +169,6 @@ class Map:
 
     def setMonsterSpawns(self, numMonsters):
 
-        # TODO: Try to prevent monsters from spawning too close to the player.
         # Randomly set spawns for the specified number of monsters.
         for i in range(numMonsters + 1):
             tile = None
@@ -327,13 +326,3 @@ class Map:
 
     def __contains__(self, coordinate):
         return coordinate in self.maze
-
-# m = Map()
-# l = m.toList()
-# result = ""
-# for y in range(len(l[0])):
-#     for x in range(len(l)):
-#         result += str(l[x][y])
-#     result += "\n"
-#
-# print result
